@@ -2,147 +2,239 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Blox Fruits Web Edition - R15 Avatar</title>
+    <title>Blox Fruits Web - Advanced R15 Edition</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #1a1a1a;
-            font-family: Arial, sans-serif;
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', sans-serif; }
+        #canvas { display: block; margin: 0 auto; background: #3b7a57; border: 4px solid #222; }
+        #ui {
+            position: absolute; top: 15px; left: 15px; color: white;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; width: 260px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
         }
-        #gameCanvas {
-            background: #4a7c59; /* Thảm cỏ đảo khởi đầu */
-            display: block;
-            margin: 0 auto;
-        }
-        #uiOverlay {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 16px;
-        }
+        .bar-bg { width: 100%; background: #444; height: 12px; border-radius: 6px; margin: 4px 0 10px; overflow: hidden; }
+        .bar-fill { height: 100%; transition: width 0.1s; }
+        #hpBar { background: #e74c3c; width: 100%; }
+        #energyBar { background: #f39c12; width: 100%; }
+        #expBar { background: #2ecc71; width: 0%; }
+        .controls { font-size: 12px; color: #aaa; margin-top: 8px; line-height: 1.4; }
     </style>
 </head>
 <body>
 
-    <!-- Khung UI hiển thị thông số nhân vật -->
-    <div id="uiOverlay">
-        <div>⚔️ <b>Cấp độ (Level):</b> <span id="lvlText">1</span></div>
-        <div>💰 <b>Beli:</b> <span id="beliText">0</span></div>
-        <div>🍇 <b>Trái Ác Quỷ:</b> <span id="fruitText">Chưa có</span></div>
-        <small>💡 Bấm <b>WASD</b> để di chuyển | Click <b>Chuột trái</b> để đấm M1</small>
+    <div id="ui">
+        <div>⚔️ <b>Level:</b> <span id="lvl">1</span> | 💰 <b>Beli:</b> <span id="beli">0</span></div>
+        
+        <div style="margin-top: 8px; font-size: 12px;">MÁU (HP)</div>
+        <div class="bar-bg"><div id="hpBar" class="bar-fill"></div></div>
+
+        <div style="font-size: 12px;">NĂNG LƯỢNG (ENERGY)</div>
+        <div class="bar-bg"><div id="energyBar" class="bar-fill"></div></div>
+
+        <div style="font-size: 12px;">KINH NGHIỆM (EXP)</div>
+        <div class="bar-bg"><div id="expBar" class="bar-fill"></div></div>
+
+        <div>🍇 <b>Trái Ác Quỷ:</b> <span id="fruit">Buddha</span></div>
+        <div class="controls">
+            🎮 <b>Di chuyển:</b> WASD<br>
+            👊 <b>Đánh thường M1:</b> Click Chuột Trái<br>
+            💥 <b>Chiêu [Z] Phật Tổ:</b> Phím Z (Tốn 30 Energy)
+        </div>
     </div>
 
-    <!-- Khung Render đồ họa Game -->
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <canvas id="canvas" width="900" height="650"></canvas>
 
     <script>
-        // =========================================================
-        // BACKEND URL (Thay link Render của ní vào đây nha bro!)
-        // =========================================================
-        const RENDER_URL = "https://blox-fruits-backend.onrender.com"; 
+        const RENDER_URL = "https://blox-fruits-backend.onrender.com"; // 👈 Sửa link Render tại đây!
+        const USER_ID = "player123";
 
-        const canvas = document.getElementById('gameCanvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Tọa độ & Thông số nhân vật R15
+        // --- NHÂN VẬT CHÍNH R15 ---
         const player = {
-            x: 400,
-            y: 300,
-            speed: 4,
-            width: 30,
-            height: 50,
-            isAttacking: false,
-            attackTimer: 0,
-            // Data lấy từ Render
-            level: 1,
-            beli: 0,
-            fruit: "None"
+            x: 200, y: 300, speed: 4, sizeScale: 1,
+            hp: 100, maxHp: 100, energy: 100, maxEnergy: 100,
+            level: 1, exp: 0, maxExp: 100, beli: 0,
+            isAttacking: false, isBuddha: false, attackTimer: 0,
+            shockwave: null
+        };
+
+        // --- BOSS GORILLA KING ---
+        const boss = {
+            x: 650, y: 300, hp: 300, maxHp: 300, size: 60,
+            speed: 1.5, alive: true, attackCooldown: 0
         };
 
         const keys = {};
-
-        // 1. Lắng nghe phím bấm di chuyển
-        window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key.toLowerCase() === 'z') useSkillZ();
+        });
         window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-        // 2. Lắng nghe Click chuột trái đấm M1
-        window.addEventListener('mousedown', (e) => {
-            if (e.button === 0 && !player.isAttacking) { // Chuột trái
-                player.isAttacking = true;
-                player.attackTimer = 10; // Hiện hiệu ứng đấm trong 10 frame
-                console.log("👉 Vừa tung cú đấm M1 khói lửa!");
-            }
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !player.isAttacking) performM1();
         });
 
-        // 3. Tải dữ liệu nhân vật từ Server Render về Web
-        async function loadPlayerData() {
-            try {
-                const res = await fetch(`${RENDER_URL}/api/player/12345`);
-                const data = await res.json();
-                if(data.success) {
-                    player.level = data.playerData.level;
-                    player.beli = data.playerData.beli;
-                    player.fruit = data.playerData.currentFruit;
-                    
-                    // Cập nhật lên UI
-                    document.getElementById('lvlText').innerText = player.level;
-                    document.getElementById('beliText').innerText = player.beli;
-                    document.getElementById('fruitText').innerText = player.fruit;
-                }
-            } catch (err) {
-                console.warn("⚠️ Không kết nối được Render Backend, xài data tạm nha bro!");
+        // 1. ĐẤM THƯỜNG M1
+        function performM1() {
+            player.isAttacking = true;
+            player.attackTimer = 8;
+            
+            // Xử lý gây sát thương cho Boss
+            const reach = 50 * player.sizeScale;
+            const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
+            if (boss.alive && dist < reach + boss.size) {
+                const dmg = 25 * player.sizeScale;
+                boss.hp -= dmg;
+                console.log(`💥 Đấm M1 trúng Boss! Mất ${dmg} HP!`);
+                if (boss.hp <= 0) killBoss();
             }
         }
 
-        // 4. Vòng lặp cập nhật & vẽ Game (Game Loop)
-        function gameLoop() {
-            // -- Cập nhật vị trí di chuyển --
-            if (keys['w'] || keys['arrowup']) player.y -= player.speed;
-            if (keys['s'] || keys['arrowdown']) player.y += player.speed;
-            if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
-            if (keys['d'] || keys['arrowright']) player.x += player.speed;
+        // 2. SKILL Z TRÁI PHẬT TỔ (BUDDHA)
+        function useSkillZ() {
+            if (player.energy < 30) return;
+            player.energy -= 30;
 
-            // Xóa khung hình cũ
+            // Kích hoạt hóa vàng & Phóng Sóng Âm (Shockwave)
+            player.isBuddha = true;
+            player.sizeScale = 1.8; // Biến to gấp đôi
+            player.shockwave = { x: player.x, y: player.y, radius: 20, maxRadius: 120 };
+
+            // Gây sát thương diện rộng (AoE)
+            const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
+            if (boss.alive && dist < 150) {
+                boss.hp -= 80;
+                if (boss.hp <= 0) killBoss();
+            }
+        }
+
+        // 3. TIÊU DIỆT BOSS & THƯỞNG
+        function killBoss() {
+            boss.alive = false;
+            player.exp += 60;
+            player.beli += 5000;
+            
+            if (player.exp >= player.maxExp) {
+                player.level++;
+                player.exp -= player.maxExp;
+                player.maxExp = Math.floor(player.maxExp * 1.5);
+                player.maxHp += 20; player.hp = player.maxHp;
+            }
+
+            updateUI();
+            saveDataToRender();
+
+            // Hồi sinh Boss sau 4 giây
+            setTimeout(() => {
+                boss.hp = boss.maxHp;
+                boss.x = 650; boss.y = 300;
+                boss.alive = true;
+            }, 4000);
+        }
+
+        // 4. LƯU TIẾN TRÌNH LÊN RENDER
+        async function saveDataToRender() {
+            try {
+                await fetch(`${RENDER_URL}/api/player/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: USER_ID, level: player.level,
+                        exp: player.exp, beli: player.beli
+                    })
+                });
+            } catch (e) { console.warn("Lỗi Save!"); }
+        }
+
+        // 5. CẬP NHẬT GIAO DIỆN UI
+        function updateUI() {
+            document.getElementById('lvl').innerText = player.level;
+            document.getElementById('beli').innerText = player.beli;
+            document.getElementById('hpBar').style.width = (player.hp / player.maxHp * 100) + '%';
+            document.getElementById('energyBar').style.width = (player.energy / player.maxEnergy * 100) + '%';
+            document.getElementById('expBar').style.width = (player.exp / player.maxExp * 100) + '%';
+        }
+
+        // --- VÒNG LẶP CHÍNH (GAME LOOP) ---
+        function loop() {
+            // -- Di chuyển Player --
+            if (keys['w']) player.y -= player.speed;
+            if (keys['s']) player.y += player.speed;
+            if (keys['a']) player.x -= player.speed;
+            if (keys['d']) player.x += player.speed;
+
+            // Hồi Năng lượng tự động
+            if (player.energy < player.maxEnergy) player.energy += 0.1;
+
+            // -- AI Boss Rượt Đấm --
+            if (boss.alive) {
+                const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+                const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
+                
+                if (dist > 40) {
+                    boss.x += Math.cos(angle) * boss.speed;
+                    boss.y += Math.sin(angle) * boss.speed;
+                } else {
+                    // Boss đấm Player
+                    boss.attackCooldown++;
+                    if (boss.attackCooldown > 40) {
+                        player.hp = Math.max(0, player.hp - 10);
+                        boss.attackCooldown = 0;
+                        updateUI();
+                    }
+                }
+            }
+
+            // -- VẼ ĐỒ HỌA --
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // -- Vẽ nhân vật R15 (Khối hộp) --
-            // Thân (Torso)
-            ctx.fillStyle = '#0066cc';
-            ctx.fillRect(player.x - 15, player.y - 15, 30, 30);
-            
-            // Đầu (Head)
-            ctx.fillStyle = '#ffcc99';
-            ctx.fillRect(player.x - 10, player.y - 35, 20, 20);
-
-            // Chân R15 (Legs)
-            ctx.fillStyle = '#333333';
-            ctx.fillRect(player.x - 12, player.y + 15, 10, 20);
-            ctx.fillRect(player.x + 2, player.y + 15, 10, 20);
-
-            // -- Vẽ Hiệu ứng đấm M1 --
-            if (player.isAttacking) {
-                ctx.fillStyle = '#ff9900';
+            // Vẽ Sóng Âm Trái Buddha
+            if (player.shockwave) {
+                ctx.strokeStyle = '#f1c40f';
+                ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(player.x + 25, player.y, 15, 0, Math.PI * 2); // Cú đấm lửa
-                ctx.fill();
-
-                player.attackTimer--;
-                if (player.attackTimer <= 0) {
-                    player.isAttacking = false;
-                }
+                ctx.arc(player.shockwave.x, player.shockwave.y, player.shockwave.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                player.shockwave.radius += 8;
+                if (player.shockwave.radius > player.shockwave.maxRadius) player.shockwave = null;
             }
 
-            requestAnimationFrame(gameLoop);
+            // Vẽ Player R15 (Tùy biến vàng kim nếu đang bật Buddha)
+            const s = player.sizeScale;
+            ctx.fillStyle = player.isBuddha ? '#f1c40f' : '#0066cc'; // Thân
+            ctx.fillRect(player.x - 15 * s, player.y - 15 * s, 30 * s, 30 * s);
+            ctx.fillStyle = '#ffcc99'; // Đầu
+            ctx.fillRect(player.x - 10 * s, player.y - 35 * s, 20 * s, 20 * s);
+
+            // Hiệu ứng M1
+            if (player.isAttacking) {
+                ctx.fillStyle = '#e67e22';
+                ctx.beginPath();
+                ctx.arc(player.x + 30 * s, player.y, 15 * s, 0, Math.PI * 2);
+                ctx.fill();
+                player.attackTimer--;
+                if (player.attackTimer <= 0) player.isAttacking = false;
+            }
+
+            // Vẽ Boss Gorilla King & Thanh Máu Boss
+            if (boss.alive) {
+                ctx.fillStyle = '#4a235a';
+                ctx.fillRect(boss.x - boss.size/2, boss.y - boss.size/2, boss.size, boss.size);
+                
+                // Máu Boss
+                ctx.fillStyle = '#222';
+                ctx.fillRect(boss.x - 40, boss.y - 45, 80, 8);
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(boss.x - 40, boss.y - 45, (boss.hp / boss.maxHp) * 80, 8);
+            }
+
+            updateUI();
+            requestAnimationFrame(loop);
         }
 
-        // Chạy game!
-        loadPlayerData();
-        gameLoop();
+        loop();
     </script>
 </body>
 </html>
