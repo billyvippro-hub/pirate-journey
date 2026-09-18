@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Blox Fruits Web Edition - R15 Avatar</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            background: #4a7c59; /* Thảm cỏ đảo khởi đầu */
+            display: block;
+            margin: 0 auto;
+        }
+        #uiOverlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Khung UI hiển thị thông số nhân vật -->
+    <div id="uiOverlay">
+        <div>⚔️ <b>Cấp độ (Level):</b> <span id="lvlText">1</span></div>
+        <div>💰 <b>Beli:</b> <span id="beliText">0</span></div>
+        <div>🍇 <b>Trái Ác Quỷ:</b> <span id="fruitText">Chưa có</span></div>
+        <small>💡 Bấm <b>WASD</b> để di chuyển | Click <b>Chuột trái</b> để đấm M1</small>
+    </div>
+
+    <!-- Khung Render đồ họa Game -->
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script>
+        // =========================================================
+        // BACKEND URL (Thay link Render của ní vào đây nha bro!)
+        // =========================================================
+        const RENDER_URL = "https://blox-fruits-backend.onrender.com"; 
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Tọa độ & Thông số nhân vật R15
+        const player = {
+            x: 400,
+            y: 300,
+            speed: 4,
+            width: 30,
+            height: 50,
+            isAttacking: false,
+            attackTimer: 0,
+            // Data lấy từ Render
+            level: 1,
+            beli: 0,
+            fruit: "None"
+        };
+
+        const keys = {};
+
+        // 1. Lắng nghe phím bấm di chuyển
+        window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+        // 2. Lắng nghe Click chuột trái đấm M1
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !player.isAttacking) { // Chuột trái
+                player.isAttacking = true;
+                player.attackTimer = 10; // Hiện hiệu ứng đấm trong 10 frame
+                console.log("👉 Vừa tung cú đấm M1 khói lửa!");
+            }
+        });
+
+        // 3. Tải dữ liệu nhân vật từ Server Render về Web
+        async function loadPlayerData() {
+            try {
+                const res = await fetch(`${RENDER_URL}/api/player/12345`);
+                const data = await res.json();
+                if(data.success) {
+                    player.level = data.playerData.level;
+                    player.beli = data.playerData.beli;
+                    player.fruit = data.playerData.currentFruit;
+                    
+                    // Cập nhật lên UI
+                    document.getElementById('lvlText').innerText = player.level;
+                    document.getElementById('beliText').innerText = player.beli;
+                    document.getElementById('fruitText').innerText = player.fruit;
+                }
+            } catch (err) {
+                console.warn("⚠️ Không kết nối được Render Backend, xài data tạm nha bro!");
+            }
+        }
+
+        // 4. Vòng lặp cập nhật & vẽ Game (Game Loop)
+        function gameLoop() {
+            // -- Cập nhật vị trí di chuyển --
+            if (keys['w'] || keys['arrowup']) player.y -= player.speed;
+            if (keys['s'] || keys['arrowdown']) player.y += player.speed;
+            if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
+            if (keys['d'] || keys['arrowright']) player.x += player.speed;
+
+            // Xóa khung hình cũ
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // -- Vẽ nhân vật R15 (Khối hộp) --
+            // Thân (Torso)
+            ctx.fillStyle = '#0066cc';
+            ctx.fillRect(player.x - 15, player.y - 15, 30, 30);
+            
+            // Đầu (Head)
+            ctx.fillStyle = '#ffcc99';
+            ctx.fillRect(player.x - 10, player.y - 35, 20, 20);
+
+            // Chân R15 (Legs)
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(player.x - 12, player.y + 15, 10, 20);
+            ctx.fillRect(player.x + 2, player.y + 15, 10, 20);
+
+            // -- Vẽ Hiệu ứng đấm M1 --
+            if (player.isAttacking) {
+                ctx.fillStyle = '#ff9900';
+                ctx.beginPath();
+                ctx.arc(player.x + 25, player.y, 15, 0, Math.PI * 2); // Cú đấm lửa
+                ctx.fill();
+
+                player.attackTimer--;
+                if (player.attackTimer <= 0) {
+                    player.isAttacking = false;
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Chạy game!
+        loadPlayerData();
+        gameLoop();
+    </script>
+</body>
+</html>
